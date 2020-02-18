@@ -107,6 +107,13 @@ Application::Application()
 
 		uniform mat4 u_modelView;
 
+		float fresnelReflectance(vec3 H, vec3 V, float F0)
+		{
+			float base = 1.0 - dot(V, H);
+			float exponential = pow(base, 5.0);
+			return exponential + F0 * (1.0 - exponential);
+		}
+
 		void main()
 		{
 			vec3 L = normalize(v_L);
@@ -126,7 +133,7 @@ Application::Application()
 			vec3 H = normalize(L + E);
 
 			vec3 reflected = reflect(E, N);
-			reflected = vec3(vec4(reflected, 0.0) * u_modelView);
+			reflected = normalize(vec3(vec4(reflected, 0.0) * u_modelView));
 
 			vec3 env_colour = pow(textureCube(u_cubemap, reflected).rgb, vec3(u_gamma));
 
@@ -143,7 +150,9 @@ Application::Application()
 
 			vec3 albido = pow(texture2D(u_texture, v_uv).rgb, vec3(u_gamma));
 
-			vec3 color = (u_ambientProduct + diffuse + diffuse2) * albido + 0.3 * env_colour * pow(1.0 - normal.z, 2.0);
+			float f = fresnelReflectance(N, E, 0.0028);
+
+			vec3 color = (u_ambientProduct + diffuse + diffuse2) * albido + env_colour * f;
 
 			gl_FragColor = vec4(pow(color, vec3(1.0/u_gamma)), 1.0);
 		}
