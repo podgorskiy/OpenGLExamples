@@ -4,7 +4,8 @@
 #include <memory>
 #include <chrono>
 #include "imgui.h"
-#include "examples/opengl3_example/imgui_impl_glfw_gl3.h"
+#include "examples/imgui_impl_glfw.h"
+#include "examples/imgui_impl_opengl3.h"
 
 int main()
 {
@@ -13,17 +14,28 @@ int main()
 	/* Initialize the library */
 	glfwInit();
 
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+
 	/* Create a windowed mode window and its OpenGL context */
 	window = glfwCreateWindow(640, 640, "Hello World", NULL, NULL);
 
 	/* Make the window's context current */
 	glfwMakeContextCurrent(window);
+    glfwSwapInterval(1);
 
-	ImGui_ImplGlfwGL3_Init(window, false);
+    ImGui::CreateContext();
+
+	ImGui::StyleColorsDark();
+
+	ImGui_ImplGlfw_InitForOpenGL(window, false);
 
 	{
 		std::shared_ptr<Application> app = std::make_shared<Application>();
-		
+
+	    const char* glsl_version = "#version 130";
+	    ImGui_ImplOpenGL3_Init(glsl_version);
+
 		app->Resize(640, 640);
 		
 		glfwSetWindowUserPointer(window, app.get());
@@ -54,12 +66,10 @@ int main()
 			io.AddInputCharacter((unsigned short)c);
 		});
 
-		glfwSetScrollCallback(window, [](GLFWwindow* window, double /*xoffset*/, double yoffset)
+		glfwSetScrollCallback(window, [](GLFWwindow*, double /*xoffset*/, double yoffset)
 		{
 			ImGuiIO& io = ImGui::GetIO();
 			io.MouseWheel += (float)yoffset * 2.0f;
-			Application* app = static_cast<Application*>(glfwGetWindowUserPointer(window));
-			app->OnScroll(yoffset);
 		});
 
 		glfwSetMouseButtonCallback(window, [](GLFWwindow*, int button, int action, int /*mods*/)
@@ -81,11 +91,14 @@ int main()
 
 			std::chrono::duration<float> elapsed_time = (current_timestamp - start);
 
-			ImGui_ImplGlfwGL3_NewFrame();
+	        ImGui_ImplOpenGL3_NewFrame();
+	        ImGui_ImplGlfw_NewFrame();
+	        ImGui::NewFrame();
 
 			app->Draw(elapsed_time.count());
 
 			ImGui::Render();
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
 			/* Swap front and back buffers */
 			glfwSwapBuffers(window);
@@ -95,7 +108,7 @@ int main()
 		}
 
 		glfwSetWindowSizeCallback(window, nullptr);
-		ImGui_ImplGlfwGL3_Shutdown();
+		ImGui_ImplGlfw_Shutdown();
 	}
 
 	glfwTerminate();

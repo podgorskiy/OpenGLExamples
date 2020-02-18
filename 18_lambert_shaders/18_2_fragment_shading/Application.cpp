@@ -9,7 +9,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "imgui.h"
-#include "examples/opengl3_example/imgui_impl_glfw_gl3.h"
+#include "examples/imgui_impl_opengl3.h"
 
 GLuint CompileShader(const char* src, GLint type)
 {

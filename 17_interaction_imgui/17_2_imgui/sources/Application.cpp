@@ -5,7 +5,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 #include "imgui.h"
-#include "examples/opengl3_example/imgui_impl_glfw_gl3.h"
+#include "examples/imgui_impl_opengl3.h"
 
 GLuint CompileShader(const char* src, GLint type)
 {
@@ -144,9 +144,8 @@ void Application::Draw(float time)
 	}
 
 	ImGui::End();
-	
-	
-	ImGui::ShowTestWindow();
+
+	ImGui::ShowDemoWindow();
 
 	glm::mat4 rotation = glm::rotate(glm::mat4(1.0), m_triangleRotation, glm::vec3(0, 0, 1.0f));
 	glUniform3fv(m_uniform_color, 1, &m_color[0]);

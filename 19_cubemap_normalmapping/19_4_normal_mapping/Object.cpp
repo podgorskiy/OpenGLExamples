@@ -5,6 +5,7 @@
 #include <sstream>
 #include <vector>
 #include <map>
+#include <string.h>
 
 void Object::Load(std::string path)
 {
