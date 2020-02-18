@@ -59,6 +59,7 @@ void Object::Load(std::string path)
 					v.pos = positions[pos[i] - 1];
 					v.uv = uv_coordinates[uv[i] - 1];
 					v.normal = glm::vec3(0);
+					v.tangent = glm::vec3(0);
 					vertices.push_back(v);
 				}
 			}

@@ -40,7 +40,6 @@ Texture::~Texture()
 TexturePtr Texture::LoadTexture(const std::string& path)
 {
 	Texture* texture = new Texture;
-	texture->Bind(0);
 
 	FILE* f = fopen(path.c_str(), "rb");
 
@@ -102,7 +101,14 @@ TexturePtr Texture::LoadTexture(const std::string& path)
 
 	fseek(f, ftell(f) + metaDataSize, SEEK_SET);
 
-	texture->Bind(0);
+	if (header.cubemap)
+	{
+		texture->BindCube(0);
+	}
+	else
+	{
+		texture->Bind(0);
+	}
 
 	char* tempBuffer = NULL;
 	char* p = NULL;

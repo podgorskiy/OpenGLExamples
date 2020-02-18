@@ -10,6 +10,7 @@ public:
 	static TexturePtr LoadTexture(const std::string& path);
 	
 	void Bind(int slot);
+	void BindCube(int slot);
 	void  UnBind();
 
 	enum EPVRTColourSpace

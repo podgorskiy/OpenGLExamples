@@ -40,7 +40,6 @@ Texture::~Texture()
 TexturePtr Texture::LoadTexture(const std::string& path)
 {
 	Texture* texture = new Texture;
-	texture->Bind(0);
 
 	FILE* f = fopen(path.c_str(), "rb");
 
@@ -80,7 +79,7 @@ TexturePtr Texture::LoadTexture(const std::string& path)
 	fread(&numFaces, 4, 1, f);
 	fread(&header.MIPMapCount, 4, 1, f);
 	fread(&metaDataSize, 4, 1, f);
-	
+
 	header.pixelFormatCompressed = static_cast<Texture::EPVRTPixelFormat>(pixelFormatCompressed);
 	header.colourSpace = static_cast<Texture::EPVRTColourSpace>(colourSpace);
 
@@ -89,7 +88,7 @@ TexturePtr Texture::LoadTexture(const std::string& path)
 		printf("Error reading texture\n");
 		return TexturePtr();
 	}
-	
+
 	assert(version == 0x03525650);
 	assert(flags == 0 || flags == 2);
 	assert(depth == 1);
@@ -102,7 +101,14 @@ TexturePtr Texture::LoadTexture(const std::string& path)
 
 	fseek(f, ftell(f) + metaDataSize, SEEK_SET);
 
-	texture->Bind(0);
+	if (header.cubemap)
+	{
+		texture->BindCube(0);
+	}
+	else
+	{
+		texture->Bind(0);
+	}
 
 	char* tempBuffer = NULL;
 	char* p = NULL;
