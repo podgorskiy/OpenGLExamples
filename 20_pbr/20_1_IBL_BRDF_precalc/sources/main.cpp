@@ -4,7 +4,10 @@
 #include "../../../libs/stb/stb_image_write.h"
 
 typedef uint32_t uint;
-using namespace glm;
+typedef glm::vec<2, double> vec2;
+typedef glm::vec<3, double> vec3;
+typedef glm::vec<4, double> vec4;
+using glm::max;
 
 
 // https://github.com/Nadrin/PBR/blob/master/data/shaders/glsl/spbrdf_cs.glsl
@@ -13,14 +16,13 @@ using namespace glm;
 // http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
 
 const uint NumSamples = 1024;
-const float InvNumSamples = 1.0 / float(NumSamples);
+const double InvNumSamples = 1.0 / double(NumSamples);
 
-const float PI = 3.141592;
-const float Epsilon = 0.001; // This program needs larger eps.
+const double PI = 3.141592653589793;
 
 // Compute Van der Corput radical inverse
 // See: http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
-float radicalInverse_VdC(uint bits)
+double radicalInverse_VdC(uint bits)
 {
 	bits = (bits << 16u) | (bits >> 16u);
 	bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
@@ -40,41 +42,41 @@ vec2 sampleHammersley(uint i)
 // Importance sample GGX normal distribution function for a fixed roughness value.
 // This returns normalized half-vector between Li & Lo.
 // For derivation see: http://blog.tobias-franke.eu/2014/03/30/notes_on_importance_sampling.html
-vec3 sampleGGX(float u1, float u2, float roughness)
+vec3 sampleGGX(double u1, double u2, double roughness)
 {
-	float alpha = roughness * roughness;
-	float phi = 2.0f * PI * u1;
+	double alpha = roughness * roughness;
+	double phi = 2.0f * PI * u1;
 
-	float cosTheta = sqrt((1.0 - u2) / (1.0 + (alpha*alpha - 1.0) * u2));
-	float sinTheta = sqrt(1.0 - cosTheta*cosTheta); // Trig. identity
+	double cosTheta = sqrt((1.0 - u2) / (1.0 + (alpha*alpha - 1.0) * u2));
+	double sinTheta = sqrt(1.0 - cosTheta*cosTheta); // Trig. identity
 
 	// Convert to Cartesian upon return.
 	return vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
 }
 
 // Single term for separable Schlick-GGX below.
-float gaSchlickG1(float cosTheta, float k)
+double gaSchlickG1(double cosTheta, double k)
 {
 	return cosTheta / (cosTheta * (1.0 - k) + k);
 }
 
 // Schlick-GGX approximation of geometric attenuation function using Smith's method (IBL version).
-float gaSchlickGGX_IBL(float cosLi, float cosLo, float roughness)
+double gaSchlickGGX_IBL(double cosLi, double cosLo, double roughness)
 {
-	float r = roughness;
-	float k = (r * r) / 2.0; // Epic suggests using this roughness remapping for IBL lighting.
+	double r = roughness;
+	double k = (r * r) / 2.0; // Epic suggests using this roughness remapping for IBL lighting.
 	return gaSchlickG1(cosLi, k) * gaSchlickG1(cosLo, k);
 }
 
 
-vec2 IBL_BRDF(float x, float y)
+vec2 IBL_BRDF(double x, double y)
 {
 	// Get integration parameters.
-	float cosLo = x;
-	float roughness = y;
+	double cosLo = x;
+	double roughness = y;
 
 	// Make sure viewing angle is non-zero to avoid divisions by zero (and subsequently NaNs).
-	cosLo = max(cosLo, Epsilon);
+	// cosLo = max(cosLo, Epsilon);
 
 	// Derive tangent-space viewing vector from angle to normal (pointing towards +Z in this reference frame).
 	vec3 Lo = vec3(sqrt(1.0 - cosLo*cosLo), 0.0, cosLo);
@@ -82,8 +84,8 @@ vec2 IBL_BRDF(float x, float y)
 	// We will now pre-integrate Cook-Torrance BRDF for a solid white environment and save results into a 2D LUT.
 	// DFG1 & DFG2 are terms of split-sum approximation of the reflectance integral.
 	// For derivation see: "Moving Frostbite to Physically Based Rendering 3.0", SIGGRAPH 2014, section 4.9.2.
-	float DFG1 = 0;
-	float DFG2 = 0;
+	double DFG1 = 0;
+	double DFG2 = 0;
 
 	for(uint i=0; i<NumSamples; ++i) {
 		vec2 u  = sampleHammersley(i);
@@ -94,14 +96,14 @@ vec2 IBL_BRDF(float x, float y)
 		// Compute incident direction (Li) by reflecting viewing direction (Lo) around half-vector (Lh).
 		vec3 Li = 2.0f * dot(Lo, Lh) * Lh - Lo;
 
-		float cosLi   = Li.z;
-		float cosLh   = Lh.z;
-		float cosLoLh = max(dot(Lo, Lh), 0.0f);
+		double cosLi   = Li.z;
+		double cosLh   = Lh.z;
+		double cosLoLh = max(dot(Lo, Lh), 0.0);
 
 		if(cosLi > 0.0) {
-			float G  = gaSchlickGGX_IBL(cosLi, cosLo, roughness);
-			float Gv = G * cosLoLh / (cosLh * cosLo);
-			float Fc = pow(1.0 - cosLoLh, 5);
+			double G  = gaSchlickGGX_IBL(cosLi, cosLo, roughness);
+			double Gv = G * cosLoLh / (cosLh * cosLo);
+			double Fc = pow(1.0 - cosLoLh, 5);
 
 			DFG1 += (1 - Fc) * Gv;
 			DFG2 += Fc * Gv;
@@ -121,13 +123,19 @@ int main()
 	{
 		for (int y = 0; y < size; ++y)
 		{
-			vec2 p = IBL_BRDF(float(x) / (size - 1), float(size - 1 - y) / (size - 1));
-			lut[3 * (x + y * size) + 0] = p.x * 255.0f;
-			lut[3 * (x + y * size) + 1] = p.y * 255.0f;
+			double fx = double(x) + 0.5;
+			fx /= size;
+
+			double fy = double(size - 1 - y) + 0.5;
+			fy /= size;
+
+			vec2 p = IBL_BRDF(fx, fy);
+			lut[3 * (x + y * size) + 0] = p.x * 255.0;
+			lut[3 * (x + y * size) + 1] = p.y * 255.0;
 		}
 	}
 
-	stbi_write_png("inl_brdf.png", size, size, 3, lut, 0);
+	stbi_write_png("ibl_brdf.png", size, size, 3, lut, 0);
 
 	return 0;
 }
