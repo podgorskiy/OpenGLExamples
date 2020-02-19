@@ -202,7 +202,7 @@ Application::Application()
 		    return ggx1 * ggx2;
 		}
 
-		vec3 SpecularIBL(vec3 N, vec3 V, float roughness)
+		vec3 SpecularIBL(vec3 N, vec3 V, float roughness, float F0)
 		{
 			vec3 specularLighting = 0;
 			const uint NumSamples = 256u;
@@ -223,7 +223,7 @@ Application::Application()
 		            float G = GeometrySmith(N, V, L, roughness);
 		            float G_Vis = (G * VoH) / (NoH * NoV);
 		            float Fc = pow(1.0 - VoH, 5.0);
-					float F = (1.0 - Fc) * 0.028 + Fc;
+					float F = (1.0 - Fc) * F0 + Fc;
 					specularLighting += SampleColor * F * G * VoH / (NoH * NoV);
 				}
 			}
@@ -272,7 +272,7 @@ Application::Application()
 
 			if (u_mode)
 			{
-				specular = SpecularIBL(N, E, roughness);
+				specular = SpecularIBL(N, E, roughness, F0);
 			}
 
 			//vec3 color = (u_ambientProduct + diffuse + diffuse2) * albido + specular;
