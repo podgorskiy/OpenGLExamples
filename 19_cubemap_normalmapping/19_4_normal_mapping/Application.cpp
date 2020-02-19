@@ -142,12 +142,6 @@ Application::Application()
 
 			vec3 diffuse2 = (0.5 + 0.5 * N.y) * u_diffuseProduct2;
 
-			float Ks = pow(max(dot(N, H), 0.0), u_shininess);
-			vec3 specular = Ks * u_specularProduct;
-
-			if (dot(L, N) < 0.0)
-				specular = vec3(0.0, 0.0, 0.0);
-
 			vec3 albido = pow(texture2D(u_texture, v_uv).rgb, vec3(u_gamma));
 
 			float f = fresnelReflectance(N, E, 0.0028);
@@ -345,10 +339,6 @@ void Application::Draw(float time)
 	// glUniform1fv(u_shininess, 1, &m_shininess);
 	glUniform3fv(u_lightPos, 1, &m_lightPos[0]);
 	glUniform1fv(u_gamma, 1, &m_gamma);
-
-	assert(m_uniform_cubemap < 1000);
-	assert(m_uniform_texture < 1000);
-	assert(m_uniform_normalmap < 1000);
 
 	glUniform1i(m_uniform_texture, 0);
 	glUniform1i(m_uniform_normalmap, 1);

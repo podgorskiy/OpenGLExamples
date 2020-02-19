@@ -135,15 +135,17 @@ TexturePtr Texture::LoadTexture(const std::string& path)
 		mipmapDivider *= 2;
 	}
 
+	int texture_type = header.cubemap ? GL_TEXTURE_CUBE_MAP : GL_TEXTURE_2D;
+
 	if (header.MIPMapCount > 1)
 	{
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+		glTexParameteri(texture_type, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 	}
 	else
 	{
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		glTexParameteri(texture_type, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	}
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(texture_type, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 	texture->UnBind();
 
