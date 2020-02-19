@@ -148,10 +148,10 @@ Application::Application()
 
 			vec3 albido = pow(texture(u_texture, v_uv).rgb, vec3(u_gamma));
 
-			float costheta = clamp(dot(N, E), 0.01, 0.99);
-			float roughness = clamp(u_roughness, 0.01, 0.99);
+			float costheta = clamp(dot(N, E), 0.00, 1.0);
+			float roughness = clamp(u_roughness, 0.00, 1.0);
 
-			float F = fresnelReflectance(costheta, 0.028 * spec.x, 0.0);
+			float F = fresnelReflectance(costheta, 0.028, 0.0);
 
 			vec2 envBRDF = texture(u_ibl_brdfmap, vec2(costheta, roughness)).rg;
 
@@ -259,6 +259,11 @@ Application::Application()
 	normal_map = Texture::LoadTexture("normal.pvr");
 	specular_map = Texture::LoadTexture("spec.pvr");
 	ibl_brdf_map = Texture::LoadTexture("ibl_brdf.pvr");
+
+	ibl_brdf_map->Bind(0);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	ibl_brdf_map->UnBind();
 
 	m_skybox.MakeBox();
 	glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
