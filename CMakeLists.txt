@@ -68,3 +68,5 @@ add_subdirectory (16_GLFW_input)
 add_subdirectory (17_interaction_imgui)
 add_subdirectory (18_lambert_shaders)
 add_subdirectory (19_cubemap_normalmapping)
+add_subdirectory (20_pbr)
+
