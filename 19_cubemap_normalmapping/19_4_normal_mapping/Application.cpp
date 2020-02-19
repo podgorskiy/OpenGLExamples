@@ -76,7 +76,7 @@ Application::Application()
 			v_E = -pos.xyz;
 			v_N = (u_modelView * vec4(a_normal, 0.0)).xyz;
 			v_T = (u_modelView * vec4(a_tangent, 0.0)).xyz;
-			v_uv = vec2(a_uv.x, 1.0 - a_uv.y);
+			v_uv = vec2(a_uv.x, a_uv.y);
 
 			vec4 pos_world = u_model * vec4(a_position, 1.0);
 			v_E_world = pos_world.xyz - u_camera_pos;
@@ -161,7 +161,7 @@ Application::Application()
 		void main()
 		{
 			vec3 E = normalize(v_E_world);
-			vec3 frag_colour = textureCube(u_cubemap, -E).xyz;
+			vec3 frag_colour = textureCube(u_cubemap, E).xyz;
 			gl_FragColor = vec4(frag_colour, 1.0);
 		}
 	)";

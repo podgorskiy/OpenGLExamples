@@ -4,6 +4,7 @@
 #include <glm/glm.hpp>
 #include <fstream>
 #include <sstream>
+#include <string.h>
 
 
 Texture::Texture() :m_textureHandle(-1)
@@ -111,11 +112,13 @@ TexturePtr Texture::LoadTexture(const std::string& path)
 	}
 
 	char* tempBuffer = NULL;
+	char* tempBuffer2 = NULL;
 	char* p = NULL;
 
 	{
 		int size = fsize - ftell(f);
 		tempBuffer = new char[size];
+		tempBuffer2 = new char[header.width * header.height * 4];
 		fread(tempBuffer, size, 1, f);
 		p = tempBuffer;
 	}
@@ -129,7 +132,13 @@ TexturePtr Texture::LoadTexture(const std::string& path)
 			int height = header.height / mipmapDivider;
 			int size = (width * height) * 4;
 			int faceType = header.cubemap ? (GL_TEXTURE_CUBE_MAP_POSITIVE_X + face) : GL_TEXTURE_2D;
-			glTexImage2D(faceType, mipmap, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, p);
+
+			for(int r = 0; r < height; ++r)
+			{
+				memcpy(tempBuffer2 + 4 * (width * r), p + 4 * (width * (height - 1 - r)), 4 * width);
+			}
+
+			glTexImage2D(faceType, mipmap, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, tempBuffer2);
 			p += size;
 		}
 		mipmapDivider *= 2;

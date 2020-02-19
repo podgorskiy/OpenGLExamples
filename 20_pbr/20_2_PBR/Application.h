@@ -38,6 +38,7 @@ private:
 	unsigned int m_attrib_tangent;
 	unsigned int m_attrib_color;
 
+	unsigned int u_mode;
 	unsigned int u_projection;
 	unsigned int u_projection_skybox;
 	unsigned int m_uniform_cubemap;
@@ -73,6 +74,7 @@ private:
 	float m_shininess = 50.0;
 	float m_roughness = 0.5;
 	glm::vec3 m_lightPos;
+	int m_mode;
 	float m_lightrotation = 0.0f;
 
 	glm::vec3 m_camera_direction = -glm::vec3(1.0, 1.0, 1.0);

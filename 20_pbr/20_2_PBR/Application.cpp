@@ -65,25 +65,24 @@ Application::Application()
 
 		varying vec3 v_L;
 		varying vec3 v_E;
-		varying vec3 v_E_world;
 		varying vec3 v_N;
 		varying vec3 v_T;
 
 		void main()
-		{	
+		{
 			vec4 pos = u_modelView * vec4(a_position, 1.0);
 			v_L = u_lightPos.xyz - pos.xyz;
 			v_E = -pos.xyz;
 			v_N = (u_modelView * vec4(a_normal, 0.0)).xyz;
 			v_T = (u_modelView * vec4(a_tangent, 0.0)).xyz;
-			v_uv = vec2(a_uv.x, 1.0 - a_uv.y);
-
-			vec4 pos_world = u_model * vec4(a_position, 1.0);
-			v_E_world = pos_world.xyz - u_camera_pos;
+			v_uv = vec2(a_uv.x, a_uv.y);
 
 			gl_Position = u_projection * pos;
 		}
 	)";
+
+	// https://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_notes_v2.pdf
+	// https://blog.selfshadow.com/publications/s2013-shading-course/karis/s2013_pbs_epic_slides.pdf
 
 	const char* fragment_shader_src = R"(
 		// light and material properties
@@ -109,10 +108,127 @@ Application::Application()
 		uniform sampler2D u_ibl_brdfmap;
 
 		uniform mat4 u_modelView;
+		uniform int u_mode;
+
+		const float PI = 3.14159265359;
+
+		float RadicalInverse_VdC(uint bits)
+		{
+		    bits = (bits << 16u) | (bits >> 16u);
+		    bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+		    bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+		    bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+		    bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+		    return float(bits) * 2.3283064365386963e-10; // / 0x100000000
+		}
+		// ----------------------------------------------------------------------------
+		vec2 Hammersley(uint i, uint N)
+		{
+		    return vec2(float(i)/float(N), RadicalInverse_VdC(i));
+		}
 
 		vec3 fresnelReflectance(float costheta, vec3 F0, float roughness)
 		{
             return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(1.0 - costheta, 5.0);
+		}
+
+		vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
+		{
+		    float a = roughness*roughness;
+
+		    float phi = 2.0 * PI * Xi.x;
+		    float cosTheta = sqrt((1.0 - Xi.y) / (1.0 + (a*a - 1.0) * Xi.y));
+		    float sinTheta = sqrt(1.0 - cosTheta*cosTheta);
+
+		    // from spherical coordinates to cartesian coordinates
+		    vec3 H;
+		    H.x = cos(phi) * sinTheta;
+		    H.y = sin(phi) * sinTheta;
+		    H.z = cosTheta;
+
+		    // from tangent-space vector to world-space sample vector
+		    vec3 up        = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+		    vec3 tangent   = normalize(cross(up, N));
+		    vec3 bitangent = cross(N, tangent);
+
+		    vec3 sampleVec = tangent * H.x + bitangent * H.y + N * H.z;
+		    return normalize(sampleVec);
+		}
+
+		vec3 sampleCubemap(vec3 dir, float roughness)
+		{
+		    vec3 N = normalize(dir);
+		    vec3 R = N;
+		    vec3 V = R;
+
+		    const uint SAMPLE_COUNT = 256u;
+		    float totalWeight = 0.0;
+		    vec3 prefilteredColor = vec3(0.0);
+		    for(uint i = 0u; i < SAMPLE_COUNT; ++i)
+		    {
+		        vec2 Xi = Hammersley(i, SAMPLE_COUNT);
+		        vec3 H  = ImportanceSampleGGX(Xi, N, roughness);
+		        vec3 L  = normalize(2.0 * dot(V, H) * H - V);
+
+		        float NdotL = max(dot(N, L), 0.0);
+		        if(NdotL > 0.0)
+		        {
+		            prefilteredColor += pow(textureLod(u_cubemap, -L, 0.0).rgb, vec3(u_gamma)) * NdotL;
+		            totalWeight      += NdotL;
+		        }
+		    }
+		    prefilteredColor = prefilteredColor / totalWeight;
+			return prefilteredColor;
+		}
+
+		float GeometrySchlickGGX(float NdotV, float roughness)
+		{
+		    float a = roughness;
+		    float k = (a * a) / 2.0;
+
+		    float nom   = NdotV;
+		    float denom = NdotV * (1.0 - k) + k;
+
+		    return nom / denom;
+		}
+
+		float GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+		{
+		    float NdotV = max(dot(N, V), 0.0);
+		    float NdotL = max(dot(N, L), 0.0);
+		    float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+		    float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+
+		    return ggx1 * ggx2;
+		}
+
+		vec3 SpecularIBL(vec3 N, vec3 V, float roughness)
+		{
+			vec3 specularLighting = 0;
+			const uint NumSamples = 256u;
+
+			for(uint i = 0; i < NumSamples; i++)
+			{
+				vec2 Xi = Hammersley(i, NumSamples);
+		        vec3 H  = ImportanceSampleGGX(Xi, N, roughness);
+		        vec3 L  = normalize(2.0 * dot(V, H) * H - V);
+		        float NoV = max(dot(N, V), 0.0);
+		        float NoL = max(dot(N, L), 0.0);
+		        float NoH = max(dot(N, H), 0.0);
+		        float VoH = max(dot(V, H), 0.0);
+
+				if(NoL > 0.0)
+				{
+		            vec3 SampleColor = pow(textureLod(u_cubemap, -L, 0.0).rgb, vec3(u_gamma));
+		            float G = GeometrySmith(N, V, L, roughness);
+		            float G_Vis = (G * VoH) / (NoH * NoV);
+		            float Fc = pow(1.0 - VoH, 5.0);
+					float F = (1.0 - Fc) * 0.028 + Fc;
+					specularLighting += SampleColor * F * G * VoH / (NoH * NoV);
+				}
+			}
+
+			return specularLighting / double(NumSamples);
 		}
 
 		void main()
@@ -120,7 +236,6 @@ Application::Application()
 			vec3 L = normalize(v_L);
 			vec3 E = normalize(v_E);
 			vec3 N = normalize(v_N);
-			vec3 N_ = N;
 
 			vec3 T1 = normalize(v_T);
 			T1 = T1 - N * dot(T1, N);
@@ -135,30 +250,33 @@ Application::Application()
 
 			vec3 H = normalize(L + E);
 
-			vec3 reflected = reflect(E, N);
-			reflected = normalize(vec3(vec4(reflected, 0.0) * u_modelView));
+			N = normalize(vec3(vec4(N, 0.0) * u_modelView));
+			E = normalize(vec3(vec4(E, 0.0) * u_modelView));
+			vec3 reflected = -reflect(E, N);
 
-			int cubemapLevels = textureQueryLevels(u_cubemap);
-			vec3 env_colour = pow(textureLod(u_cubemap, reflected, u_roughness * cubemapLevels).rgb, vec3(u_gamma));
+			float roughness = clamp(u_roughness, 0.0, 1.0);
 
-			float Kd = max(dot(L, N), 0.0);
-			vec3 diffuse = Kd * u_diffuseProduct;
-
-			vec3 diffuse2 = (0.5 + 0.5 * N.y) * u_diffuseProduct2;
-
-			vec3 albido = pow(texture(u_texture, v_uv).rgb, vec3(u_gamma));
+			//int cubemapLevels = textureQueryLevels(u_cubemap);
+			//vec3 env_colour = pow(textureLod(u_cubemap, -reflected, u_roughness * cubemapLevels).rgb, vec3(u_gamma));
+			vec3 env_colour = sampleCubemap(reflected, u_roughness);
 
 			float costheta = clamp(dot(N, E), 0.00, 1.0);
-			float roughness = clamp(u_roughness, 0.00, 1.0);
 
-			float F = fresnelReflectance(costheta, 0.028, 0.0);
+			float F0 = 0.028;
+			float F = fresnelReflectance(costheta, F0, roughness);
 
 			vec2 envBRDF = texture(u_ibl_brdfmap, vec2(costheta, roughness)).rg;
 
 			//gl_FragColor = vec4(pow(vec3(envBRDF, 0.0), vec3(1.0/u_gamma)), 1.0);
-			vec3 specular = env_colour * (F * envBRDF.x + envBRDF.y);
+			vec3 specular = env_colour * (F0 * envBRDF.x + envBRDF.y);
 
-			vec3 color = (u_ambientProduct + diffuse + diffuse2) * albido + specular;
+			if (u_mode)
+			{
+				specular = SpecularIBL(N, E, roughness);
+			}
+
+			//vec3 color = (u_ambientProduct + diffuse + diffuse2) * albido + specular;
+			vec3 color = specular;
 
 			gl_FragColor = vec4(pow(color, vec3(1.0/u_gamma)), 1.0);
 		}
@@ -166,14 +284,15 @@ Application::Application()
 
 	const char* skybox_fragment_shader_src = R"(
 		// light and material properties
-		varying vec3 v_E_world;
+		varying vec3 v_E;
+		uniform mat4 u_modelView;
 
 		uniform samplerCube u_cubemap;
 
 		void main()
 		{
-			vec3 E = normalize(v_E_world);
-			vec3 frag_colour = textureCube(u_cubemap, -E).xyz;
+			vec3 E = normalize(vec3(vec4(v_E, 0.0) * u_modelView));
+			vec3 frag_colour = textureCube(u_cubemap, E).xyz;
 			gl_FragColor = vec4(frag_colour, 1.0);
 		}
 	)";
@@ -226,6 +345,9 @@ Application::Application()
 
 	u_modelView = glGetUniformLocation(m_program, "u_modelView");
 	u_projection = glGetUniformLocation(m_program, "u_projection");
+	u_mode = glGetUniformLocation(m_program, "u_mode");
+
+
 
 	u_ambientProduct = glGetUniformLocation(m_program, "u_ambientProduct");
 	u_diffuseProduct = glGetUniformLocation(m_program, "u_diffuseProduct");
@@ -318,6 +440,8 @@ void Application::Draw(float time)
 	ImGui::SliderFloat("LightRotation", (float*)&m_lightrotation, 0.0f, 6.28f);
 	ImGui::SliderFloat("Gamma", (float*)&m_gamma, 1.0f, 3.0f);
 
+	ImGui::Checkbox("Mode", (bool*)&m_mode);
+
 	ImGui::End();
 
 	glEnable(GL_DEPTH_TEST);
@@ -372,6 +496,7 @@ void Application::Draw(float time)
 	glUniform1i(m_uniform_cubemap, 2);
 	glUniform1i(m_uniform_specmap, 3);
 	glUniform1i(m_uniform_ibl_brdf_map, 4);
+	glUniform1i(u_mode, m_mode);
 
 	m_obj.Bind();
 

@@ -10,14 +10,13 @@ typedef glm::vec<4, double> vec4;
 using glm::max;
 
 
+// https://learnopengl.com/PBR/IBL/Specular-IBL
 // https://github.com/Nadrin/PBR/blob/master/data/shaders/glsl/spbrdf_cs.glsl
 // https://github.com/derkreature/IBLBaker/blob/master/data/shadersD3D11/IblBrdf.hlsl
 // http://glslsandbox.com/e#47996.4
 // http://holger.dammertz.org/stuff/notes_HammersleyOnHemisphere.html
 
 const uint NumSamples = 1024;
-const double InvNumSamples = 1.0 / double(NumSamples);
-
 const double PI = 3.141592653589793;
 
 // Compute Van der Corput radical inverse
@@ -35,51 +34,65 @@ double radicalInverse_VdC(uint bits)
 // Sample i-th point from Hammersley point set of NumSamples points total.
 vec2 sampleHammersley(uint i)
 {
-	return vec2(i * InvNumSamples, radicalInverse_VdC(i));
+	return vec2(double(i) / double(NumSamples), radicalInverse_VdC(i));
 }
 
-
-// Importance sample GGX normal distribution function for a fixed roughness value.
-// This returns normalized half-vector between Li & Lo.
-// For derivation see: http://blog.tobias-franke.eu/2014/03/30/notes_on_importance_sampling.html
-vec3 sampleGGX(double u1, double u2, double roughness)
+vec3 sampleGGX(vec2 Xi, vec3 N, double roughness)
 {
-	double alpha = roughness * roughness;
-	double phi = 2.0f * PI * u1;
+    double a = roughness*roughness;
 
-	double cosTheta = sqrt((1.0 - u2) / (1.0 + (alpha*alpha - 1.0) * u2));
-	double sinTheta = sqrt(1.0 - cosTheta*cosTheta); // Trig. identity
+    double phi = 2.0 * PI * Xi.x;
+    double cosTheta = sqrt((1.0 - Xi.y) / (1.0 + (a*a - 1.0) * Xi.y));
+    double sinTheta = sqrt(1.0 - cosTheta*cosTheta);
 
-	// Convert to Cartesian upon return.
-	return vec3(sinTheta * cos(phi), sinTheta * sin(phi), cosTheta);
+    // from spherical coordinates to cartesian coordinates
+    vec3 H;
+    H.x = cos(phi) * sinTheta;
+    H.y = sin(phi) * sinTheta;
+    H.z = cosTheta;
+
+    // from tangent-space vector to world-space sample vector
+    vec3 up        = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent   = normalize(cross(up, N));
+    vec3 bitangent = cross(N, tangent);
+
+    vec3 sampleVec = tangent * H.x + bitangent * H.y + N * H.z;
+    return normalize(sampleVec);
 }
 
-// Single term for separable Schlick-GGX below.
-double gaSchlickG1(double cosTheta, double k)
+double GeometrySchlickGGX(double NdotV, double roughness)
 {
-	return cosTheta / (cosTheta * (1.0 - k) + k);
+    double a = roughness;
+    double k = (a * a) / 2.0;
+
+    double nom   = NdotV;
+    double denom = NdotV * (1.0 - k) + k;
+
+    return nom / denom;
+}
+// ----------------------------------------------------------------------------
+double GeometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    double NdotV = max(dot(N, V), 0.0);
+    double NdotL = max(dot(N, L), 0.0);
+    double ggx2 = GeometrySchlickGGX(NdotV, roughness);
+    double ggx1 = GeometrySchlickGGX(NdotL, roughness);
+
+    return ggx1 * ggx2;
 }
 
-// Schlick-GGX approximation of geometric attenuation function using Smith's method (IBL version).
-double gaSchlickGGX_IBL(double cosLi, double cosLo, double roughness)
-{
-	double r = roughness;
-	double k = (r * r) / 2.0; // Epic suggests using this roughness remapping for IBL lighting.
-	return gaSchlickG1(cosLi, k) * gaSchlickG1(cosLo, k);
-}
 
 
 vec2 IBL_BRDF(double x, double y)
 {
 	// Get integration parameters.
-	double cosLo = x;
+	double NdotV = x;
 	double roughness = y;
 
-	// Make sure viewing angle is non-zero to avoid divisions by zero (and subsequently NaNs).
-	// cosLo = max(cosLo, Epsilon);
-
-	// Derive tangent-space viewing vector from angle to normal (pointing towards +Z in this reference frame).
-	vec3 Lo = vec3(sqrt(1.0 - cosLo*cosLo), 0.0, cosLo);
+    vec3 V;
+    V.x = sqrt(1.0 - NdotV * NdotV);
+    V.y = 0.0;
+    V.z = NdotV;
 
 	// We will now pre-integrate Cook-Torrance BRDF for a solid white environment and save results into a 2D LUT.
 	// DFG1 & DFG2 are terms of split-sum approximation of the reflectance integral.
@@ -87,30 +100,30 @@ vec2 IBL_BRDF(double x, double y)
 	double DFG1 = 0;
 	double DFG2 = 0;
 
-	for(uint i=0; i<NumSamples; ++i) {
-		vec2 u  = sampleHammersley(i);
+    vec3 N = vec3(0.0, 0.0, 1.0);
 
-		// Sample directly in tangent/shading space since we don't care about reference frame as long as it's consistent.
-		vec3 Lh = sampleGGX(u.x, u.y, roughness);
+	for(uint i=0; i<NumSamples; ++i)
+	{
+		vec2 Xi = sampleHammersley(i);
+        vec3 H  = sampleGGX(Xi, N, roughness);
+        vec3 L  = normalize(2.0 * dot(V, H) * H - V);
 
-		// Compute incident direction (Li) by reflecting viewing direction (Lo) around half-vector (Lh).
-		vec3 Li = 2.0f * dot(Lo, Lh) * Lh - Lo;
+        double NdotL = max(L.z, 0.0);
+        double NdotH = max(H.z, 0.0);
+        double VdotH = max(dot(V, H), 0.0);
 
-		double cosLi   = Li.z;
-		double cosLh   = Lh.z;
-		double cosLoLh = max(dot(Lo, Lh), 0.0);
+		if(NdotL > 0.0)
+		{
+            float G = GeometrySmith(N, V, L, roughness);
+            float G_Vis = (G * VdotH) / (NdotH * NdotV);
+            float Fc = pow(1.0 - VdotH, 5.0);
 
-		if(cosLi > 0.0) {
-			double G  = gaSchlickGGX_IBL(cosLi, cosLo, roughness);
-			double Gv = G * cosLoLh / (cosLh * cosLo);
-			double Fc = pow(1.0 - cosLoLh, 5);
-
-			DFG1 += (1 - Fc) * Gv;
-			DFG2 += Fc * Gv;
+			DFG1 += (1 - Fc) * G_Vis;
+			DFG2 += Fc * G_Vis;
 		}
 	}
 
-	return vec2(DFG1, DFG2) * InvNumSamples;
+	return vec2(DFG1, DFG2) / double(NumSamples);
 }
 
 
